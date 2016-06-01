@@ -1,0 +1,1556 @@
+<script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+<script src="http://code.jquery.com/ui/1.10.4/jquery-ui.js"></script>
+<link rel="stylesheet" href="//code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css">
+<script>
+var sorttable = document.createElement('script');
+sorttable.type = "text/javascript"
+sorttable.src = "http://www.kryogenix.org/code/browser/sorttable/sorttable.js"
+$('head').append(sorttable)
+
+var uniqueStudies = []
+var uniqueTitle = []
+var uniqueGEOD = []
+var organismOnPage = []
+var GEODOnPage = []
+var bargraphData = []
+
+$(document).ready(function () {
+	
+	obtainStudies();
+
+	// The code below is used to connect the GOAD Facebook page to the website.
+	if ($('#fb-root').length > 0) {
+        $(function (d, s, id) {
+            var js, fjs = d.getElementsByTagName(s)[0];
+            if (d.getElementById(id))
+                return;
+            js = d.createElement(s);
+            js.id = id;
+            // Connecting to the appID that links to the GOAD facebook page
+            js.src = "//connect.facebook.net/en_US/sdk.js#xfbml=1&version=v2.3&appId=654692364667032";
+            fjs.parentNode.insertBefore(js, fjs);
+        }(document, 'script', 'facebook-jssdk'));
+    }  
+	
+	// When the user clicks upon the contact button, all other divs are hidden and contactInfo is shown.
+	$("body").on("click", "#contactButton", function(){
+		returnHome();
+		$("#accordion").hide();
+		$("#contactInfo").show();
+	});
+
+	$("body").on("click", "#informationButton", function(){
+		returnHome();
+		$("#accordion").hide();
+		$("#materialInfo").show();
+	});
+
+	$("body").on("click", "#homeButton", function(){
+		returnHome();
+	});
+
+	// When clicking upon the return button at the publication part, the homepage is shown again. 
+	$("body").on("click", ".returnButton", function(){
+		returnHome();
+	});
+	
+	$("body").on("click", "#geneSearch", function(){
+		var geneName = [];
+		var freqData = [];
+		var allInfoFreqData = {};
+		var tpmFreqData = {};
+		// The filled in value of the input with id geneText is used.
+		if ($('#geneText').val() != "") {
+			$.each(uniqueGEOD, function(s, studies){
+				// The first step is to determine which organism is checked.
+				// The information of that organism is used to look up the gene and the link to the ensembl page.
+				// An error bar is shown when the gene couldn't be found.
+				
+				// Checking for the organism 'mice'
+				if ($("input[type='radio']:checked").val() === "mice") {
+					geneName = capitalizeEachWord($('#geneText').val());
+					$.get("/api/v2/miceGenes?q=Associated_Gene_Name=="+geneName).done(function(data){
+						if (data["total"] !== 0) {
+							var data = data["items"];
+							$("#geneInformation").html("<a href='http://www.ensembl.org/Mus_musculus/Gene/Summary?g="+data[0]['Ensembl_Gene_ID']+"' target='_blank'><h4>"+ geneName + "</a>" +
+								"<br/>" + capitalizeEachWord(data[0]["Description"].split("[")[0]) + "</h4>");
+						} else {
+							$("#geneInformation").html('<div class="alert alert-danger" role="alert"><strong>Oops!</strong> The gene: "'+ capitalizeEachWord(geneName) +'" is unknown<br/>Please return and fill in another gene!</div>');
+						}
+					});
+					
+				// Checking for the organism 'human'
+				} else if ($("input[type='radio']:checked").val() === "human") {
+					geneName = $('#geneText').val().toUpperCase();
+					$.get("/api/v2/humanGenes?q=Associated_Gene_Name=="+geneName).done(function(data){
+						if (data["total"] !== 0) {
+							var data = data["items"];
+							$("#geneInformation").html("<a href='http://www.ensembl.org/Home_sapiens/Gene/Summary?g="+data[0]['Ensembl_Gene_ID']+"' target='_blank'><h4>"+ geneName + "</a>" +
+								"<br/><h5>" + capitalizeEachWord(data[0]["Description"].split("[")[0]) + "</h4>");
+						} else {
+							$("#geneInformation").html('<div class="alert alert-danger" role="alert"><strong>Oops!</strong> The gene: "'+ capitalizeEachWord(geneName) +'" is unknown<br/>Please return and fill in another gene!</div>');
+						}
+					});
+				}
+				
+				//The given gene is searched within all of the studies.
+				$.get("/api/v2/TPM_"+studies.replace(/-/g,"")+"?q=external_gene_name=="+geneName).done(function(data){
+					// The process continues when information is found.)
+					if (data["total"] !== 0) {
+					// The div with id dashboard is shown (necessary otherwise the image wont be created).
+					$("#dashboard").show();
+						// Attributes are obtained from the meta data
+						// Items are obtained.
+						var attr = data.meta["attributes"];
+						var data = data["items"];
+						
+						//Each data item and attribute is walked through.
+						$.each(data, function(i, content){
+							$.each(attr, function(t, types){
+								// The 1st position when performing item % 4 and is used to obtain the cell type name.
+								if (t % 4 === 1 && t !== 0) {
+									if (attr[t]["name"].length > 4){
+										// The names of the cell types are capitalized when the length > 4.
+										allInfoFreqData["Gene"] = capitalizeEachWord(attr[t]["name"].replace(/_/g, " "))
+									} else {
+										// Cell types with a length of 4 are seen as an abbreviation and therefore written in Uppercase.
+										allInfoFreqData["Gene"] = attr[t]["name"].replace(/_/g, " ").toUpperCase()
+									}
+									// The 'normal' TPM values are obtained as well
+									tpmFreqData["TPM"] = data[i][attr[t]["name"]]
+								} else if (t % 4 === 2 && t !== 0) {
+									// The TPM low values are obtained
+									// Found on the 2th position when performing item % 4.
+									tpmFreqData["TPM Low"] = data[i][attr[t]["name"]]
+								} else if (t % 4 === 3 && t !== 0) {
+									// Found on the 0th position when performing item % 4.
+									tpmFreqData["TPM High"] = data[i][attr[t]["name"]]
+									// All of the obtained info about the cell type is saved into allInfoFreqData
+									allInfoFreqData["TPMvals"] = tpmFreqData
+									// The dict tpmFreqData is cleared for the next cell type (only TPM values)
+									tpmFreqData = {};
+									// The dict allInfoFreData is pushed into the dict freData so it can be used by the
+									// function dashboard in the end.
+									freqData.push(allInfoFreqData);
+									// The dict allInfoFreqData is cleared when all of the celltypes within a study are walked through.
+									if (t !== attr.length) {
+										allInfoFreqData = {};
+									}	 
+								}
+							});
+						});
+						
+						// A div is created for each study (Making sure that the page doesn't look messed up in the end).
+						$("#dashboard").append("<div id='" + studies.replace(/-/g,"") + "'>")
+						// The title, author and research link are obtained from the global study information.
+						$.get('/api/v2/Test_studies?attr=Title&q=GEOD_NR=="'+studies+'"').done(function(data){
+								var data = data["items"];
+								// This information is added into the div, making sure that it is clear which dashboard belongs to which study.
+								if (data[1]['Research_link'] === "Unknown") {
+									
+									$("#"+studies.replace(/-/g,"")).append("<p class='svgTitle'><b>"+ data[1]["Title"] +"</b><br/>By "+ data[1]["Author"] + "</a>"+ "</p> <br/>");
+								} else {
+									$("#"+studies.replace(/-/g,"")).append("<p class='svgTitle'><b>"+ data[1]["Title"] +"</b><br/>By <a href='"+data[1]['Research_link']+"' target='_blank'>"+ data[1]["Author"] + "</a>"+ "</p> <br/>");
+								}
+								// This information is added into the div, making sure that it is clear which doashboard belongs to which study.
+							});
+						// The dashboard is created for the study.
+						dashboard('#'+studies.replace(/-/g,""),freqData);
+						// freqData is cleared.
+						freqData = [];
+					} 
+				});
+			});
+		}
+
+	// The accordion is resetted to the 'normal' state.
+	$('#collapseOne').collapse("show");
+	$('#collapseTwo').collapse("hide");
+	// A return button is shown.
+	$("#returnTPM").show();
+	// The accordion is hidden.
+	$("#accordion").hide();
+	// The gene part is shown (part with the dashboards).
+	$("#genePart").show();
+	// The search value is cleared.
+	$('#geneText').val("");
+	});
+	
+	// When clicking upon the conditionSearch button
+	$("body").on("click", "#conditionSearch", function(){
+		// The tableContent is emptied
+		$("#tableContent").empty();
+		if ($('#conditionText').val() != "") {
+			// Studies that contain the condition given in the searchbar are returned.
+			$.get("/api/v2/Test_studies?q=Abstract=q="+$("#conditionText").val().replace(/ /g,'_')).done(function(data){
+			var data = data["items"];
+			var tdstart = "<td>";
+			var tdend = "</td>";
+			uniqueTitle = [];
+			uniqueStudies = [];
+			// The found studies are loaded into the studyTable.
+			$.each(data, function(i, item){
+				if ($.inArray(data[i]["Title"], uniqueTitle)== -1) {
+					uniqueTitle.push(data[i]["Title"]);
+					uniqueStudies.push(
+						"<tr class='studyTable' id='" + data[i]["GEOD_NR"] + "' >" 
+						+ tdstart + data[i]["Title"] + tdend
+						+ tdstart + data[i]["Author"] + tdend 
+						+ tdstart + data[i]["Organism"] + tdend 
+						+ tdstart + data[i]["Year"] + tdend 
+						+ "</tr>" );
+		 			}
+			});
+		// These studies are sorted alphabetically on the GEOD number.
+		uniqueStudies.sort()
+		// Studies are joined with <br/> and written into the div tableContent.
+		$("#tableContent").html(uniqueStudies.join("<br/>"));
+			});
+	// The accordion with the studies will open and the condition search part will close.
+	$('#collapseOne').collapse("show");
+	$('#collapseThree').collapse("hide");
+	// A refresh button is showed to refresh all of the studies again.
+	$("#refreshPublications").show();
+	// The condition searchbar is emptied again.
+	$('#conditionText').val("");
+	}});
+
+	// When clicking upon the refresh button 
+	$("body").on("click", "#refreshPublications", function(){
+	// All of the known studies are obtained. 
+	$.get("/api/v2/Test_studies?attrs=Unique_ID,GEOD_NR,Title,Author,Organism,Year,Research_link&num=10000").done(function(data){
+		var data = data["items"];
+		var tdstart = "<td>";
+		var tdend = "</td>";
+		uniqueTitle = [];
+		uniqueStudies = [];
+		// Each of the known studies is added into the variable uniqueStudies.
+		$.each(data, function(i, item){
+			if ($.inArray(data[i]["Title"], uniqueTitle)== -1) {
+				uniqueTitle.push(data[i]["Title"]);
+				uniqueStudies.push(
+					"<tr class='studyTable' id='" + data[i]["GEOD_NR"] + "' >" 
+					+ tdstart + data[i]["Title"] + tdend
+					+ tdstart + data[i]["Author"] + tdend 
+					+ tdstart + data[i]["Organism"] + tdend 
+					+ tdstart + data[i]["Year"] + tdend 
+					+ "</tr>" );
+	 			}
+			});
+		// These studies are sorted alphabetically on the GEOD number.
+		uniqueStudies.sort()
+		// Studies are joined with <br/> and written into the div tableContent.
+		$("#tableContent").html(uniqueStudies.join("<br/>"));
+	});
+	// The refresh button is hidden again.
+	$("#refreshPublications").hide();
+	});
+
+	//----------------------//
+	//Tutorial part of GOAD.//
+	//----------------------//
+	
+	// When clicking upon the close button of the tutorial pop up
+	$("body").on("click", "#closeModal", function(){
+		// Information about the QE and DE analysis is hidden.
+		$('#QEanalysis').collapse('hide');
+		$('#DEanalysis').collapse('hide');
+	});
+	
+	// When clicking upon the DE information in the tutorial button the QE information is hidden.
+	$("body").on("click", "#tutorialDEinfo", function(){
+		$('#QEanalysis').collapse('hide');
+	});
+
+	// When clicking upon the QE information in the tutorial button the DE information is hidden.
+	$("body").on("click", "#tutorialQEinfo", function(){
+		$('#DEanalysis').collapse('hide');
+	});
+
+	// The input id filter is called (this input is used to filter the studies on the homepage).
+    searchBar("#filter");
+    
+});
+
+	//-------------------------------------------------//
+	//Global functions of the publication part of GOAD.//
+	//-------------------------------------------------//
+	
+	// When clicking upon a study within the studyTable.
+	$("body").on("click", ".studyTable", function(){
+	
+		// Creates a tooltip when hovering on the studyTable	
+		$('.studyTable').tooltip(); 
+	
+		// The information of the given studies are obtained.
+		var uniqueConditions = [];
+		var studyConditions = [];
+		var studyInformation = [];
+		$.get("/api/v2/Test_studies?q=GEOD_NR=="+$(this).attr("id")).done(function(data){
+			var data = data["items"];
+			// The variables studyTitle and GEODOnPage are cleared.
+			var studyTitle = [];
+			GEODOnPage = [];
+			organismOnPage = [];
+			// For each known sample the data is obtained.
+			$.each(data, function(i, item){
+				// The data is saved when the sample is not known yet.
+				if ($.inArray(data[i]["Tissue"] + " " + data[i]["Celltype"] + " " + data[i]["Strain"] + " " + data[i]["Age"], uniqueConditions) === -1 ){
+					uniqueConditions.push(data[i]["Tissue"] + " " + data[i]["Celltype"] + " " + data[i]["Strain"] + " " + data[i]["Age"]);
+					// Variable sampleInfo is made to make sure that one sample is noted as option.	
+					var sampleInfo = data[i]["Tissue"] + " " + data[i]["Celltype"] + " " + data[i]["Strain"] + " " + data[i]["Age"];
+					// Information is pushed to the variable studyConditions.
+					studyConditions.push('<option value="' + data[i]["SRA"] + '">' + sampleInfo + '</option>');
+				}
+				// The code below is used to show global information like the title, author and publication year above the QE/DE part.
+				// Only if the title is not yet known in studyTitle, this information is added to the variable studyInformation.
+				if ($.inArray(data[i]["Title"], studyTitle)== -1) {
+					studyTitle.push(data[i]["Title"]);
+					studyInformation.push(
+						"<b>Title:</b> " + data[i]["Title"] + "<br/>"
+						+ "<b>Author:</b> " + data[i]["Author"] + "<br/>"
+						+ "<b>Publication year:</b> " + data[i]["Year"]);
+					// The GEOD number is pushed so it can be used for calling the R API's.
+					GEODOnPage.push(data[i]["GEOD_NR"]);
+					organismOnPage.push(data[i]["Organism"]);
+ 			}});
+		// Conditions are sorted alphabetically.
+		studyConditions.sort();
+		// The different conditions are added into the select selectConditions.
+		$("#selectConditions").html(studyConditions);
+		// Global information is added into the div informationStudy.
+		$("#informationStudy").html(studyInformation);
+		});
+		// The according showing the studies is hidden and the publicationPart with the options QE and DE is shown.
+		$("#accordion").hide();
+		$(".row.DE").hide();
+		$("#analysis_info").show();
+		$("#publicationPart").show();
+	});
+
+	//---------------------------------------------//
+	//DE functions of the publication part of GOAD.//
+	//---------------------------------------------//
+
+	//When clicking upon the DE button.
+	$("body").on("click", "#DEbutton", function(){
+		// QE content that might be visible is hidden.
+		$("#QE_info").hide();
+		$("#analysis_info").hide();
+		$("#QE_content").hide();
+		$("#searchBar_QE").hide();
+		$("#submitQEbutton").hide();
+		// The select2 bar is shown.
+		$("#s2id_selectConditions").show();
+		$("#selectBar").show();
+		// Makes sure that there are two conditions chosen within the select bar.
+		if ($('#selectConditions option').size() !== 1) {
+			$("#selectBar").toggle();
+			$("#selectConditions").select2({
+				placeholder: "Select two conditions",
+				maximumSelectionSize:2,
+				allowClear: true
+			});
+		} else {
+		//An error is raised when none or one condition is chosen.
+			$("#selectBarMessage").show();
+		}
+		hideQE();
+		$("#s2id_selectConditions").show();
+		$("#selectBar").show();
+		$("#DE_info").show();
+	});
+
+	$("body").on("click", "#submitDEbutton", function(){
+		// The table-scroll is emptied when clicking the DE submit button
+		// and the for-control is reset.
+		$("#DE_info").hide();
+		$(".table-scroll").empty();
+		$("#firstCondition").empty();
+		$(".form-control").trigger("reset");
+		// When there are two conditions chosen the API for the scatterplot and the DE table is called.
+		var count = $("#selectConditions :selected").length;
+		if (count === 2) {
+			var tableContent = [];
+			
+			$.get("/api/v2/"+GEODOnPage[0].replace(/-/g,'')+"_targets?q=SRA=="+$("#selectConditions").val()[0]).done(
+					function(data){ 
+						var data = data["items"];
+						$(".row.DE").append("<div id='firstCondition' class='col-md-11 col-md-offset-1 DE'><b>"+ capitalizeEachWord(data[0]["Description"].replace(/-|_/g,' ')) + "</b></div>")
+			});
+			
+			$.get("/scripts/New_DE_ScatterPlot/run?entityName="+GEODOnPage[0].replace(/-/g,'')+"&condition1="+$("#selectConditions").val()[0]+"&condition2="+$("#selectConditions").val()[1]+"&targetFile="+GEODOnPage[0].replace(/-/g,'')+"_targets&organism="+organismOnPage[0].replace(/ /g, "+")).done(
+				function(data){
+					// The necessary information from the scatterD3 plot is obtained
+		   			var regexData = /(\<div id="htmlwidget_container"\>\n[A-z0-9 \n\<\=\"\-\:\;\>\/\!\.]+)\<script type="application\/json" data-for="htmlwidget.+\>(\{.+\})/g;
+					match = regexData.exec(data);
+					if (match !== null) {
+						var obj = JSON.parse(match[2]);	
+						// The necessary information for the scatterplot is written to the div scatterplot.
+						$("#scatterplot").html(match[1]);
+						// The render function creates the interactive scatterplot.
+						render('#scatterplot', obj.x);
+						// The extra div that is created by the render function is removed.
+						$('div[id^="htmlwidget"]').remove()
+						// The column name which is used for the legend is replaced bij 'p-value'.
+						$('text.color-legend-label').text('p-value')
+					}
+				});
+			
+			$.get("/scripts/New_DE_table/run?entityName="+GEODOnPage[0].replace(/-/g,'')+"&condition1="+$("#selectConditions").val()[0]+"&condition2="+$("#selectConditions").val()[1]+"&targetFile="+GEODOnPage[0].replace(/-/g,'')+"_targets&organism="+organismOnPage[0].replace(/ /g, "+")).done(
+					function(data){
+						if (data.startsWith('Login success[1] "No differentially expressed genes where found')) {
+							$("#NoDEGMessage").show();
+						} else {
+							// The DE table is added to the div DETable.
+							$("#DETable").append(
+									'<table id="countTable" class="table table-striped table-hover table-condensed table-responsive header-fixed sortable">' +
+										'<thead><tr><th>Genesymbol</th><th>LogFC</th><th>FDR</th></tr></thead>' +
+										'<tbody id="DEcontent" class="searchable"></tbody>' +
+									'</table>');
+							// The data information obtained from the API is splitted by new lines and spaces.
+							var stringArray = data.split(/[ ,\n"]+/);
+							// Starting from the 5th element the data is saved into the variable tableContent.
+							tableContent = stringArray.slice(4,stringArray.length)
+							var counter = 0;
+							var stringToAppend = '';
+							// For each element within the variable tableContent
+							$.each(tableContent, function(i, content){
+								if (counter ===0){
+									// The beginning of the row for the table is made starting with the first element.
+									stringToAppend += '<tr><td>'+content+'</td>';
+									counter += 1;
+								} else if (counter < 2){
+									// Adding elements. 
+									stringToAppend += '<td>'+content+'</td>';
+									counter += 1;
+								} else {
+									// The last element end to row and appends the information to the div DEcontent.
+									stringToAppend += '<td>'+parseFloat(content).toFixed(7)+'</td></tr>';
+									$('#DEcontent').append(stringToAppend);
+									stringToAppend = '';
+									counter = 0;
+								};
+
+							});
+							// Shows all of the necessary content used for the DE analysis.
+							$("#DETable").show();
+							$("#DEcontent").show();
+							$("#searchBar_DE").show()
+							$("#DETableContent").show();
+							$("#scatterplot").show();
+							$(".row.DE").show();
+							searchBar("#DEsearch");	
+				}
+
+				});
+			} else {
+				// An error is given when there is only one condition to choose from.
+				$("#errorLengthForSubmit").show();
+				$('#errorLengthForSubmit').delay(3000).fadeOut('slow');
+			}
+		});
+
+	//---------------------------------------------//
+	//QE functions of the publication part of GOAD.//
+	//---------------------------------------------//
+
+	$("#DownloadQE").click(function (e) {
+		// Obtaining information from the header and the table body.
+		var tableHeader = $('#QETable>table>thead').find('tr:has(th)');
+	    var tableRows = $('#QETable>table').find('tr:has(td)');
+	    
+	    // Temporary delimiter characters unlikely to be typed by keyboard
+	    // This is to avoid accidentally splitting the actual contents
+	    tmpColDelim = String.fromCharCode(11); // vertical tab character
+	    tmpRowDelim = String.fromCharCode(0); // null character
+
+	    // Actual delimiter characters for CSV format
+	    colDelim = '","';
+	    rowDelim = '"\r\n"';
+
+	    // The function exportTableInfo is used to obtain the necessary information
+		csv = exportTableInfo(tableHeader, "th").concat(rowDelim, exportTableInfo(tableRows, "td"));
+
+		// Making sure that the content is downloaded with the given name "QE_content"
+    	var downloadLink = document.createElement("a");
+		var blob = new Blob([csv.replace(/"\"/g, '"')], {type: "text/plain;charset=utf-8"});
+		downloadLink.href = window.URL.createObjectURL(blob);
+		downloadLink.download = "QE_content";
+    	downloadLink.click();
+	});
+	
+	
+	// When clicking upon the submit QE button
+	$("body").on("click", "#QEbutton", function(){
+		// The table-scroll is emptied when clicking the DE submit button
+		// and the for-control is reset.
+		$(".table-scroll").empty();
+		$(".form-control").trigger("reset");
+		var attrNames = [];
+		var availableGenes = [];
+		// Creating a table that is shown on the website.
+		var tableContent = '<table id=tpmTable" class="table table-striped table-hover table-condensed table-responsive header-fixed"><thead><tr>';
+		$.get("/api/v2/TPM_"+GEODOnPage[0].replace(/-/g,'')).done(function(data){
+			// Attributes from the meta data is obtained to determine the different cell types that are known.
+			var attr = data.meta["attributes"];
+			var data = data["items"];
+			$.each(attr, function(t, types){
+				// The name of the cell type is obtained.
+				if(!(attr[t]["name"].endsWith("low") || attr[t]["name"].endsWith("high") || attr[t]["name"].endsWith("percentile"))){
+					attrNames.push(attr[t]["name"]);
+					if (attr[t]["name"].length < 4){
+						// Cell types with a length of 4 are seen as an abbreviation and therefore written in uppercase.
+						tableContent += '<th>'+ attr[t]["name"].replace(/_/g, " ").toUpperCase()+'</th>';	
+					} else {
+						// The rest of the cell type names are capitalized.
+						tableContent += '<th>'+ capitalizeEachWord(attr[t]["name"].replace(/_/g, " "))+'</th>';
+					}
+				}
+			 });
+			// The rest of the header of the table is added together with the body.
+			tableContent += '</tr></thead><tbody id="tpmContent" class="searchable"></tbody></table>'
+			// This information is added into the div with the id "QETable"
+			$("#QETable").append(tableContent);
+			
+			var stringToAppend = '';
+			$.each(data, function(i, content){
+				if (i === 0) {
+					// The line below is used to create a bargraph of the first found gene on the website (bar graph part).
+					obtainTPMofGenes(GEODOnPage[0].replace(/-/g,''), content["external_gene_name"])
+				}
+				// These genes are saved into the array availableGenes, where it can be used with the search function.
+				availableGenes.push(content["external_gene_name"]);
+				// For each cell type name.
+				$.each(attrNames, function(n, names){
+					if (n === 0) {
+						// The name of the cell type is added as the first column and identifier of the row.
+						stringToAppend += '<tr class="TpmVals" id="'+ data[i][names] +'"><td><b>' + data[i][names] + '</b></td>';
+					} else if (n === attrNames.length - 1) {
+						// The last item is added and the row is closed.
+						stringToAppend += '<td>' + parseFloat(data[i][names]).toFixed(3) + '</td></tr>';
+						// Information is added onto the div with id "tpmContent".
+						$('#tpmContent').append(stringToAppend);
+						// The string is emptied again.
+						stringToAppend = '';
+					} else {
+						// All items in between the first and last column are added.
+						stringToAppend += '<td>'+ parseFloat(data[i][names]).toFixed(3) +'</td>';
+					}
+				});
+			});
+			// The autocomplete function of the searchbar for both the bar graph as the table is defined.
+			$(".genelist").autocomplete({
+				minLength:2,   
+               	delay:0,
+				source: availableGenes, 
+				});
+			// Shows all of the necessary content used for the QE analysis.
+			$("#selectBar").hide();
+			$("#analysis_info").hide();
+			$("#DETableContent").hide();
+			$("#firstCondition").hide();
+			$("#QETable").show();
+			$("#QE_content").show();
+			$("#searchBar_QE").show();
+			$("#QEsearch").show();
+			$(".row.DE").show();
+			$("#DownloadQE").show();
+			$("#selectBarQE").show();
+			searchBar("#QEsearch");
+		});
+		hideDE();
+	});
+
+	$("body").on("click", ".TpmVals", function(){
+		obtainTPMofGenes(GEODOnPage[0].replace(/-/g,''), $(this).attr("id"));
+		});
+
+	$("body").on("click", "#searchGeneBarGraph", function(){
+		if (organismOnPage[0] === "Homo sapiens") {
+			obtainTPMofGenes(GEODOnPage[0].replace(/-/g,''), $("#geneBarGraph").val().toUpperCase());
+		} else if (organismOnPage[0] === "Mus musculus") {
+			obtainTPMofGenes(GEODOnPage[0].replace(/-/g,''), capitalizeEachWord($("#geneBarGraph").val()));
+		}
+	});
+
+	$("body").on("click", "#searchGeneTable", function(){
+		var rex = new RegExp("^"+$("#geneTableQE").val(), 'i');
+		$('.searchable tr').hide();
+		$('.searchable tr').filter(function () {
+			return rex.test($(this).text());
+		}).show();
+
+	});
+	
+	$("body").on("click", "#returnToTPMTable", function(){
+		$("#QETable").show()
+		$("#QEsearch").show();
+		$("#returnToTPMTable").hide()
+		$('#TPMdiv').empty();
+	});
+
+//----------------------//
+// 	  Functions GOAD 	//
+//----------------------//
+
+function hideDE(){
+	// DE data is hidden.
+	$("#selectBar").hide();
+	$("#selectConditions").hide();
+	$("#scatterplot").hide();
+	$("#searchBar_DE").hide();
+	$("#DETable").hide();
+}
+
+function hideQE(){
+	// QE data is hidden.
+	$("#QEsearch").hide();
+	$("#QETable").hide();
+	$("#QE_content").hide();
+}
+
+function exportTableInfo(rowTable, columnRecog) {
+	// Grab text from table into CSV formatted string
+	// Obtain the different columns within the row
+	return '"' + rowTable.map(function (i, row) {
+			var $row = $(row);
+			$cols = $row.find(columnRecog);
+
+			// Obtains the text from the column of the row
+			return $cols.map(function (j, col) {
+				var $col = $(col);
+					text = $col.text();
+
+				return text.replace(/"/g, ''); // escape double quotes
+
+		}).get().join(tmpColDelim)
+		}).get().join(tmpRowDelim)
+		.split(tmpRowDelim).join(rowDelim)
+		.split(tmpColDelim).join(colDelim) + '"';
+}
+
+function obtainTPMofGenes(study, genes) {
+	// This function is used to preprocess the data for the creation of the bar graph.
+	var dict = {};
+	// The gene is searched within the given study.
+	$.get("/api/v2/TPM_" + study + "?q=external_gene_name==" + genes).done(function(data){
+		// The div with id "TPMdiv" is empied.
+		$('#TPMdiv').empty();
+		// The attributes are obtained from the meta data and the items are obtained.
+		var attr = data.meta["attributes"];
+		var data = data["items"];
+		$.each(data, function(i, content){
+			$.each(attr, function(t, types){		
+				if (t === 0) {
+					// The gene name is obtained and written into the div with id "TPMdiv"
+					$("#TPMdiv").html("<h4>"+data[i][attr[t]["name"]]+"</h4>")
+				} else if (t % 4 === 1 && t !== 0) {
+					// The cell type is obtained.
+					if (attr[t]["name"].length > 4){
+						// Cell type names with a length > 4 are capitalized.
+						dict["Gene"] = capitalizeEachWord(attr[t]["name"].replace(/_/g, " "))
+					} else {
+						// Cell type names with a length < 4 are seen as an abbreviation and therefore written in uppercase.
+						dict["Gene"] = attr[t]["name"].replace(/_/g, " ").toUpperCase()
+					}
+					// The 'normal' TPM value is added into the dict 'dict'.
+					dict["TPM"] = data[i][attr[t]["name"]]
+				} else if (t % 4 === 2 && t !== 0) {
+					// Information on position 2 when performing t % 4 are saved as the low TPM values.
+					dict["Low_TPM"] = data[i][attr[t]["name"]]
+				} else if (t % 4 === 3 && t !== 0) {
+					// Information on position 3 when performing t % 4 are saved as the high TPM values.
+					dict["High_TPM"] = data[i][attr[t]["name"]]
+				} else if (t % 4 === 0 && t != 0) {
+					// Information on position 0 when performing t % 4 are saved as the percentiles.
+					dict["Percentile"] = data[i][attr[t]["name"]]
+					// All of the information is pushed to the array bargraphData
+					bargraphData.push(dict)
+					// The dict 'dict' is empied when in the end.
+					if (t !== attr.length) {
+						dict = {};
+					} 
+				}
+			});
+		});
+		// The function createBarGraph is called to create the bargraph
+		createBarGraph();
+		// The tab with the bargraph is opened when the bargraph is made.
+		$('#QE_tabs a[href="#barGraph"]').tab('show')
+		// Emptying the array bargraphData in the end. 
+		bargraphData = [];
+		});
+}
+
+function searchBar(inputName){
+	$(inputName).keyup(function () {
+    var rex = new RegExp($(this).val(), 'i');
+    $('.searchable tr').hide();
+    $('.searchable tr').filter(function () {
+        return rex.test($(this).text());
+    }).show();
+});
+}
+
+function returnHome(){
+	$("#accordion").show();
+	$(function() {
+	  $('#selectConditions').select2('data', null)
+	})
+	hideDE();
+	hideQE();
+	$(".alert-danger").hide();
+	$("#materialInfo").hide();
+	$("#publicationPart").hide();
+	$("#contactInfo").hide();
+	$("#genePart").hide();
+	$("#noQEFound").remove();
+	$("#refreshPublications").hide();
+	$("#dashboard").empty().hide();
+	$("#TPMdiv").empty();
+	$("#DE_info").hide();
+	$("#QE_info").hide();
+	obtainStudies();
+}
+
+function obtainStudies() {
+	// The studies known in the studies database are collected
+	$.get("/api/v2/Test_studies?attrs=Unique_ID,GEOD_NR,Title,Author,Organism,Year,Research_link&num=10000").done(function(data){
+		// The items within the data are collected and saved as variable data.
+		var data = data["items"];
+		var tdstart = "<td>";
+		var tdend = "</td>";
+		// For each element in the variable data
+		$.each(data, function(i, item){
+			// If the title is unknown in the variable uniqueTitle
+			if ($.inArray(data[i]["Title"], uniqueTitle)== -1) {
+				// The title of the given study is pushed to the variable uniqueTitle
+				uniqueTitle.push(data[i]["Title"]);
+				// The EGEOD number of the given study is pushed to the variable uniqueGEOD
+				uniqueGEOD.push(data[i]["GEOD_NR"]);
+				// Information like the GEOD number, title, author, organism and year are pushed to the
+				// variable uniqueStudies in the form of a row of a table.
+				uniqueStudies.push(
+					"<tr class='studyTable' id='" + data[i]["GEOD_NR"] + "' >" 
+					+ tdstart + data[i]["Title"] + tdend
+					+ tdstart + data[i]["Author"] + tdend 
+					+ tdstart + data[i]["Organism"] + tdend 
+					+ tdstart + data[i]["Year"] + tdend 
+					+ "</tr>" );
+	 			}
+			});
+		// The uniqueStudies are sorted, leading to a table where the studies are sorted on the GEOD number.
+		uniqueStudies.sort()
+		// The sorted table is joined with <br/> and added to the div tableContent.
+		$("#tableContent").html(uniqueStudies.join("<br/>"));
+	});
+}
+
+function capitalizeEachWord(str) {
+	// Each word ending with a space is used within the function.
+	// This function makes sure that each word within the string is capitalized.
+    return str.replace(/\w\S*/g, function(txt) {
+        return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+    });
+}
+
+function dashboard(id, fData){
+    var barColor = '#002080';
+    function segColor(c){ return {"TPM High":"#0080ff", "TPM Low":"#999999","TPM":"#ffcc00"}[c]; }
+    
+    // compute total values that can be seen without hovering over the pie chart
+    fData.forEach(function(d){d.total=d.TPMvals.TPM;});
+    
+    // function to handle histogram.
+    function histoGram(fD){
+        var hG={},    hGDim = {t: 60, r: 0, b: 30, l: 0};
+        hGDim.w = 700 - hGDim.l - hGDim.r, 
+        hGDim.h = 300 - hGDim.t - hGDim.b;
+            
+        var tip = d3.tip()
+		  .attr('class', 'd3-tip')
+		  .offset([-10, 0])
+		  .html(function(d) {
+		    return "<strong>TPM value : </strong>" + d[1]
+		  });
+
+        //create svg for histogram.
+        var hGsvg = d3.select(id).append("svg")
+            .attr("width", hGDim.w + hGDim.l + hGDim.r)
+            .attr("height", hGDim.h + hGDim.t + hGDim.b).append("g")
+            .attr("transform", "translate(" + hGDim.l + "," + hGDim.t + ")");
+
+        hGsvg.call(tip);
+
+        // create function for x-axis mapping.
+        var x = d3.scale.ordinal().rangeRoundBands([0, hGDim.w], 0.1)
+                .domain(fD.map(function(d) { return d[0]; }));
+
+        // Add x-axis to the histogram svg.
+        hGsvg.append("g").attr("class", "x axis")
+            .attr("transform", "translate(0," + hGDim.h + ")")
+            .call(d3.svg.axis().scale(x).orient("bottom"));
+
+        // Create function for y-axis map.
+        var y = d3.scale.linear().range([hGDim.h, 0])
+                .domain([0, d3.max(fD, function(d) { return d[1]; })]);
+
+        // Create bars for histogram to contain rectangles and freq labels.
+        var bars = hGsvg.selectAll(".bar").data(fD).enter()
+                .append("g").attr("class", "bar");
+        
+        //create the rectangles.
+        bars.append("rect")
+            // .attr("x", function(d) { return x(d[0]); })
+            .attr("x", function(d) { return x(d[0]) + (x.rangeBand() - d3.min([x.rangeBand(), 100]))/2; })
+            .attr("y", function(d) { return y(d[1]); })
+            // .attr("width", x.rangeBand())
+            .attr("width", d3.min([x.rangeBand(), 100]))
+            .attr("height", function(d) { return hGDim.h - y(d[1]); })
+            .style('fill',barColor)
+            .on("mouseover",tip.show)
+            .on("mouseout",tip.hide)
+
+           	// .attr("width", d3.min([x1.rangeBand(), 100]))
+	    	// .attr("x", function(d) { return x1(d.name) + (x1.rangeBand() - d3.min([x1.rangeBand(), 100]))/2; })
+            
+        //Create the frequency labels above the rectangles.
+        bars.append("text").text(function(d){return parseFloat(d3.format(",")(d[1])).toFixed(2)})
+            .attr("x", function(d) { return x(d[0])+x.rangeBand()/2; })
+            .attr("y", function(d) { return y(d[1])-5; })
+            .attr("text-anchor", "Middle");
+        
+        function mouseover(d){  // utility function to be called on mouseover.
+            // filter for selected Gene.
+            var st = fData.filter(function(s){ return s.Gene == d[0];})[0],
+                nD = d3.keys(st.TPMvals).map(function(s){ return {type:s, TPMvals:st.TPMvals[s]};});
+        }
+        
+        // create function to update the bars. This will be used by pie-chart.
+        hG.update = function(nD, color){
+            // update the domain of the y-axis map to reflect change in frequencies.
+            y.domain([0, d3.max(nD, function(d) {return d[1]; })]);
+            
+            // Attach the new data to the bars.
+            var bars = hGsvg.selectAll(".bar").data(nD);
+            
+            // transition the height and color of rectangles.
+            bars.select("rect").transition().duration(500)
+                .attr("y", function(d) {return y(d[1]); })
+                .attr("height", function(d) { return hGDim.h - y(d[1]); })
+                .style("fill", color);
+
+            // transition the frequency labels location and change value.
+            bars.select("text").transition().duration(500)
+                .text(function(d){ return parseFloat(d3.format(",")(d[1])).toFixed(2)})
+                .attr("y", function(d) {return y(d[1])-5; });            
+        }        
+        return hG;
+    }
+    
+    // function to handle pieChart.
+    function pieChart(pD){
+        var pC ={},    pieDim ={w:250, h: 250};
+        pieDim.r = Math.min(pieDim.w, pieDim.h) / 2;
+                
+        // create svg for pie chart.
+        var piesvg = d3.select(id).append("svg")
+            .attr("width", pieDim.w).attr("height", pieDim.h).append("g")
+            .attr("transform", "translate("+pieDim.w/2+","+pieDim.h/2+")");
+        
+        // create function to draw the arcs of the pie slices.
+        var arc = d3.svg.arc().outerRadius(pieDim.r - 10).innerRadius(0);
+
+        // create a function to compute the pie slice angles.
+        var pie = d3.layout.pie().sort(null).value(function(d) { return d.TPMvals; });
+
+        // Draw the pie slices.
+        piesvg.selectAll("path").data(pie(pD)).enter().append("path").attr("d", arc)
+            .each(function(d) { this._current = d; })
+            .style("fill", function(d) { return segColor(d.data.type); })
+            .on("mouseover",mouseover).on("mouseout",mouseout);
+    
+        // Utility function to be called on mouseover a pie slice.
+        function mouseover(d){
+            // call the update function of histogram with new data.
+            hG.update(fData.map(function(v){ 
+            	return [v.Gene, v.TPMvals[d.data.type]];}),segColor(d.data.type));
+        }
+        //Utility function to be called on mouseout a pie slice.
+        function mouseout(d){
+            // call the update function of histogram with all data.
+            hG.update(fData.map(function(v){
+                return [v.Gene,v.total];}), barColor);
+        }
+        // Animating the pie-slice requiring a custom function which specifies
+        // how the intermediate paths should be drawn.
+        function arcTween(a) {
+            var i = d3.interpolate(this._current, a);
+            this._current = i(0);
+            return function(t) { return arc(i(t));    };
+        }    
+        return pC;
+    }
+    
+    // function to handle legend.
+    function legend(lD){
+        // var leg = {};
+            
+        // create table for legend.
+        var legend = d3.select(id).append("table").attr('class','legend');
+        
+        // create one row per segment.
+        var tr = legend.append("tbody").selectAll("tr").data(lD).enter().append("tr");
+            
+        // create the first column for each segment.
+        tr.append("td").append("svg").attr("width", '16').attr("height", '16').append("rect")
+            .attr("width", '16').attr("height", '16')
+			.style("fill",function(d){ return segColor(d.type); });
+            
+        // create the second column for each segment.
+        tr.append("td").text(function(d){ return d.type;});
+
+    }
+    
+    // calculate total frequency by segment for all Gene.
+    var tF = ["TPM High","TPM Low","TPM"].map(function(d){ 
+        return {type:d, TPMvals: d3.sum(fData.map(function(t){ return t.TPMvals[d];}))}; 
+    });    
+    
+    // calculate total frequency by Gene for all segment.
+    var sF = fData.map(function(d){return [d.Gene,d.total];});
+
+    var hG = histoGram(sF), // create the histogram.
+        pC = pieChart(tF), // create the pie-chart.
+        leg= legend(tF);  // create the legend.
+}
+
+function createBarGraph(){
+	// The size of the bargraph is defined.
+	var margin = {top: 70, right: 20, bottom: 30, left: 40},
+		width = ($("#QE_content").width() * 0.85) - margin.left - margin.right,
+	    height = 500 - margin.top - margin.bottom;
+
+	var x0 = d3.scale.ordinal()
+	    .rangeRoundBands([0, width*0.87], .1);
+
+	var x1 = d3.scale.ordinal();
+
+	var y = d3.scale.linear()
+	    .range([height, 0]);
+
+	// Colors for the columns is defined.
+	var color = d3.scale.ordinal()
+		.domain(["0-5 percentile: very high expression", 
+				"5-10 percentile: high expression",
+				"10-20 percentile: moderately high expression",
+				"20-30 percentile: moderately high expression",
+				"30-40 percentile: moderate expression",
+				"40-50 percentile: moderate expression",
+				"50-60 percentile: moderate expression",
+				"60-70 percentile: low expression",
+				"70-80 percentile: low expression",
+				"80-90 percentile: low expression",
+				"90-100 percentile: very low expression",
+				"Not significantly expressed",
+				"Not expressed"
+	  			])
+	    .range([
+	    		"#ff0000", 		//Red	
+				"#ff6600",		//Orange
+				"#ffff00", 		//Yellow
+				"#ccff33", 		//Greenyellow 	
+				"#66ff33", 		//Green
+				"#66ffff", 		//Turqoise
+				"#33ccff", 		//Darkturqoise
+				"#0000ff", 		//Blue
+				"#000099", 		//Darkblue
+				"#3333cc", 		//Midnightblue	    		
+				"#000000", 		//Black	 
+				"#666666", 		//Dark Grey	   
+				"#cccccc"		//Grey	      		
+				]); 	
+
+	// X axis is defined.
+	var xAxis = d3.svg.axis()
+	    .scale(x0)
+	    .orient("bottom");
+
+	// Y axis is defined.
+	var yAxis = d3.svg.axis()
+	    .scale(y)
+	    .orient("left")
+	    .tickFormat(d3.format(".2s"));
+
+	// The tooltip is defined.
+	var tip = d3.tip()
+	  .attr('class', 'd3-tip')
+	  .offset([-10, 0])
+	  .html(function(d) {
+	  	if (d.Percentile[":"] === undefined) {
+	  		var percentileInfo = d.Percentile.split(": ");
+	  		return "TPM value : " + d.TPM + "<br/>TPM Low value : " + d.Low_TPM +"<br/>TPM High value : " + d.High_TPM + "<br/><br/>" + capitalizeEachWord(d.Percentile)
+	  	} else {
+	  		return "TPM value : " + d.TPM + "<br/>TPM Low value : " + d.Low_TPM +"<br/>TPM High value : " + d.High_TPM + "<br/><br/>" + capitalizeEachWord(percentileInfo[1])
+	  	}
+	})
+
+	// The svg is drawn and added into the div with the id "TPMdiv"
+	var svg = d3.select("#TPMdiv").append("svg")
+	    .attr("width", width + margin.left + margin.right)
+	    .attr("height", height + margin.top + margin.bottom)
+	    .attr("class", "tpmValsPlot")
+	  	.append("g")
+	    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+	  // The type of information shown (also in the legend) are defined.
+	  svg.call(tip);
+	  
+	  // Defining the tpmTypes (these types will be drawn).
+	  var tpmTypes = ["TPM"];
+	  // var tpmTypes = ["Percentile"];
+	  var percentileTypes = [
+							"0-5 percentile: very high expression", 
+	  						"5-10 percentile: high expression",
+	  						"10-20 percentile: moderately high expression",
+	  						"20-30 percentile: moderately high expression",
+	  						"30-40 percentile: moderate expression",
+	  						"40-50 percentile: moderate expression",
+	  						"50-60 percentile: moderate expression",
+	  						"60-70 percentile: low expression",
+	  						"70-80 percentile: low expression",
+	  						"80-90 percentile: low expression",
+	  						"90-100 percentile: very low expression",
+	  						"Not significantly expressed",
+	  						"Not expressed"];
+
+	  // The tpmVals are obtained.
+	  bargraphData.forEach(function(d) {
+	    d.tpmVal = tpmTypes.map(function(name) { return {name: name, value: +d[name]}; });
+	  });
+
+	  x0.domain(bargraphData.map(function(d) { return d.Gene; }));
+	  x1.domain(tpmTypes).rangeRoundBands([0, x0.rangeBand()]);
+	  y.domain([0, d3.max(bargraphData, function(d) { return d3.max(d.tpmVal, function(d) { return d.value; }); })]);
+
+	  // Adds the X axis to the svg.
+	  svg.append("g")
+	      .attr("class", "x axis")
+	      .attr("transform", "translate(0," + height + ")")
+	      .call(xAxis);
+
+	  // Adds the Y axis to the svg.
+	  svg.append("g")
+	      .attr("class", "y axis")
+	      .call(yAxis)
+	      .append("text")
+	      .attr("transform", "rotate(-90)")
+	      .attr("y", 6)
+	      .attr("dy", ".71em")
+	      .style("text-anchor", "end")
+	      .text("TPM value");
+
+	  // Defines state (used to draw all of the bars).
+	  var state = svg.selectAll(".state")
+	      .data(bargraphData)
+	      .enter().append("g")
+	      .attr("class", "state")
+	      .attr("transform", function(d) { return "translate(" + x0(d.Gene) + ",0)"; })
+	      .attr("fill", function(d) { return color(d.Percentile); })
+	      .on('mouseover', tip.show)
+	      .on('mouseout', tip.hide);
+
+	  // Adds each bar to the bargraph.
+	  state.selectAll("rect")
+	      .data(function(d) { return d.tpmVal; })
+	      .enter().append("rect")
+	      // .attr("width", x1.rangeBand())
+	      .attr("width", d3.min([x1.rangeBand(), 100]))
+	      // .attr("x", function(d) { return x1(d.name); })
+	      .attr("x", function(d) { return x1(d.name) + (x1.rangeBand() - d3.min([x1.rangeBand(), 100]))/2; })
+	      .attr("y", function(d) { return y(d.value); })
+	      .attr("height", function(d) { return height - y(d.value); })
+	      // .attr("fill", function(d) { return color(d.Percentile); });
+
+	  // Adds the legend to the svg.
+	  var legend = svg.selectAll(".legend")
+	      // .data(tpmTypes.slice().reverse())
+	      .data(percentileTypes.slice().reverse())
+	      .enter().append("g")
+	      .attr("class", "legend")
+	      .attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; });
+
+	  // Adds the color to the legend.
+	  legend.append("rect")
+	      .attr("x", width)
+	      .attr("width", 18)
+	      .attr("height", 18)
+	      .style("fill", color);
+
+	  // Adds the names of the legend.
+	  legend.append("text")
+	      .attr("x", width - 4)
+	      .attr("y", 9)
+	      .attr("dy", ".35em")
+	      .style("text-anchor", "end")
+	      .text(function(d) {
+	      	if (d[":"] === undefined) {
+	  			var percentileNumber = d.split(": ");
+	  			return capitalizeEachWord(percentileNumber[0]);
+		  	} else {
+		  		return capitalizeEachWord(d);
+		  	}
+		  });
+}
+
+</script>
+<style>
+#goadImage{
+	float:left;
+}
+
+#umcgImage{
+	float:right;
+}
+
+#divEmptyButton{
+	width:5%;
+}
+
+.panel-title{
+	color:#000000;	
+}
+
+.btn-primary, .btn.disabled {
+	border:0px;
+	background-color:#002080;
+	margin-bottom:5px;
+}
+
+#returnAccordion{
+	color:#002080 !important;
+	margin-bottom:5px;
+}
+
+#tutorialButton{
+	border:0px;
+	background-color:transparent;
+}
+
+#closeModal{
+	color:#ffffff !important; 
+}
+
+.modal-title{
+	background-color:#002080;
+	color:#ffffff;
+	padding:1em;
+}
+
+#publicationCard thead tr{
+	cursor:pointer;
+}
+
+#tutorialDEinfo, #tutorialQEinfo{
+	border:0px;
+	background-color:#002080;
+	margin-bottom:5px;
+	color:#ffffff;
+}
+
+#QETable, #searchBar_QE{
+	margin-bottom:5px;
+}
+
+#selectBar, #contactInfo, #selectBarMessage, #errorLengthForSubmit, #publicationPart, #refreshPublications, #QE_content, #searchQE, #QE_table, #searchBar_DE, #genePart, #dashboard, #analysis_info, #DownloadQE, #selectBarQE, #NoDEGMessage, #materialInfo{
+	display:none;
+	margin-bottom:1em;
+}
+
+#s2id_selectConditions, #informationStudy{
+	width:100% !important;
+	margin-bottom:1em !important;
+}
+
+.col-centered, #analysis_info{
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+#submitDEbutton{
+	align:center;
+}
+
+.table-scroll{
+	height:350px;
+	overflow:auto;
+}
+
+/* Content for the QE bar graphs */
+.tpmValsPlot {
+  font: 10px sans-serif;
+}
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+.bar {
+  fill: "#002080";
+}
+
+.x.axis path {
+  display: none;
+}
+
+.d3-tip {
+  line-height: 1;
+  font-weight: bold;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  border-radius: 2px;
+}
+
+/* Creates a small triangle extender for the tooltip */
+.d3-tip:after {
+  box-sizing: border-box;
+  display: inline;
+  font-size: 10px;
+  width: 100%;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.8);
+  content: "\25BC";
+  position: absolute;
+  text-align: center;
+}
+
+/* Style northward tooltips differently */
+.d3-tip.n:after {
+  margin: -1px 0 0 0;
+  top: 100%;
+  left: 0;
+}
+
+path {  stroke: #fff; }
+path:hover {  opacity:0.9; }
+/*rect:hover {  fill:blue; }*/
+.axis {  font: 10px sans-serif; }
+.legend tr{    border-bottom:1px solid grey; }
+.legend tr:first-child{    border-top:1px solid grey; }
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+.x.axis path {  display: none; }
+.legend{
+    margin-bottom:76px;
+    display:inline-block;
+    border-collapse: collapse;
+    border-spacing: 0px;
+}
+.legend td{
+    padding:4px 5px;
+    vertical-align:bottom;
+}
+
+</style>
+
+<div class="container">
+	<img id="goadImage" src="http://bioinf.nl:8080/GOAD2/img/Logo_GOAD.png" alt="" width="35%" height="35%" />
+	<a href="http://www.umcg.nl/NL/Zorg/paginas/Default.aspx">
+		<img id="umcgImage" src="https://www.umcg.nl/width/204/height/112/imageMaxWidth/204/imageMaxHeight/112/imageVAlign/mid/imageHAlign/mid/image/L19sYXlvdXRzLzE1L1VtY2dQb3J0YWwvaW1hZ2VzL2xvZ29fdW1jZy5wbmc=/Canvas.ashx" alt="" width="20%" height="20%" />
+	</a>
+	<div class="btn-group btn-group-justified">
+		<div id="homeButton" class="btn-group returnButton"><button class="btn btn-primary" type="button"><span class="glyphicon glyphicon-home" aria-hidden="true"></span></button></div>
+		<div id="contactButton" class="btn-group"><button class="btn btn-primary" type="button"><span class="glyphicon glyphicon-envelope" aria-hidden="true"></span></button></div>
+		<div id="informationButton" class="btn-group"><button class="btn btn-primary" type="button">Methods</button></div>
+		<div id="divEmptyButton" class="btn-group"><button class="btn btn-primary disabled" type="button">&nbsp;</button></div>
+	</div>
+	<div class="well">
+		<h1>Welcome to the online Glia Open Access Database (GOAD)</h1>
+		For more information about the features of GOAD, click<button id="tutorialButton" data-toggle="modal" data-target="#tutorialModal"><u>here</u></button>for the tutorial.
+	<div class="modal fade" tabindex="-1" role="dialog" id="tutorialModal">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" id="closeModal" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title">Tutorial</h4>
+      </div>
+      <div class="modal-body">
+		<p>
+			The Glia Open Access Database (GOAD) is a comprehensive web-based tool to access and analyze glia transcriptome data. <br/>
+			The tool has several features that can be accessed by using the drop-down menu: 
+			<ul>
+				<li>Differential gene Expression (DE) Analysis</li>
+				<li>Quantitative gene Expression (QE) analysis</li>
+			</ul>
+			<br/>
+			<div class="btn-group btn-group-justified">
+				<div class="btn-group"><button id="tutorialDEinfo" class="btn btn-default" type="button" data-toggle="collapse" data-target="#DEanalysis" aria-expanded="false">Differential Gene Expression Analysis</button></div>
+				<div class="btn-group"><button id="tutorialQEinfo" class="btn btn-default" type="button" data-toggle="collapse" data-target="#QEanalysis" aria-expanded="false">Quantitative Gene Expression Analysis</button></div>
+			</div>
+			<div class="collapse" id="DEanalysis">
+			  <div class="well">
+			  	The Differential Expression (DE) analysis can be used to generate gene lists differentially expressed genes with the associated log fold changes and multiple testing corrected p-values between two conditions of interest (A vs. B). <br/>
+				<br/>
+			  	After performing the DE analysis, an interactive volcano scatterplot will be generated showing the most siginificant genes (max 2000 are shown within the plot).
+			  	The volcano scatterplot can be used to search a specific gene with the use of a zoom.
+			  	Information as the LogFC and FDR values can be seen with the use of a hover function.<br/>
+			  	<br/>
+			  	The table next to the scatterplot shows all of the significant genes (FDR 0.05).
+			  	The columns: Gene symbol, LogFC and FDR can be found within this table.
+			  	Genes of interest can be found with the use of the search bar on top of the table.<br/>
+			  	<br/>
+			  	The DE analysis is done with the use of R, using a pairwise comparison with edgeR.
+			  	The raw dataset is filtered for genes with a ount per million (CPM) >= 2 for each row.
+			  	Gene symbols are obtained using the biomaRt package.<br/>
+			  </div>
+			</div>
+			<div class="collapse" id="QEanalysis">
+			  <div class="well">
+			  	The Quantitative Expression (QE) analysis can be used to determine which genes are expressed in particular cell type and to what degree.
+			  	A table is obtained showing the gene symbols on the left side and the detected cell types on the right of the genesymbol.
+			  	The TPM values of the given gene in a given cell type is shown.<br/>
+			  	<br/>
+			  	Transcripts Per Million (TPM) values are used to quantify gene expression in RNA sequencing data.
+			  	TPM is a modification of RPKM, respecting average invariance and elimination statistical biases from the RPKM measure.
+			  	The difference with TPM and RPKM/FPKM is that the normalization of the gene length is done first and normalization of the sequencing depth is done second.
+			  	Leading to the same number when all of the TPMs are added in each sample, which makes it easier to compare the samples.<br/>
+			  	<br/>
+				<strong>Calculation: TPM = (number of reads * 10^6) / (sum normalized transcript counts) * gene length.</strong><br/>
+			  	<br/>
+			  	A bar graph is shown when clicking on a gene of interest, showing the TPM values (TPM low, TPM high and TPM) of that gene within all of the known cell types.
+			  </div>
+			</div>
+			</p>
+	      </div>
+	    </div>
+	  </div>
+	</div>
+	</div>
+	
+<div id="accordion" class="panel-group">
+		<div class="panel panel-default">
+			<div id="headingOne" class="panel-heading">
+				<h4 class="panel-title">
+					<a href="#collapseOne" data-toggle="collapse" data-parent="#accordion">Publications</a>
+				</h4>
+			</div>
+			<div id="collapseOne" class="panel-collapse collapse in">
+				<div id="StudyInfo" class="panel-body">
+					<button id="refreshPublications" class="btn btn-default" type="button"><span class="glyphicon glyphicon-refresh"></span></button>
+					<div class="input-group span3 col-md-3 col-md-push-9"><span class="input-group-addon">Search</span><input id="filter" class="form-control" type="text" placeholder="Type here..." /></div>
+					<p>&nbsp;</p>
+					<table id="publicationCard" class="table table-striped table-hover table-condensed table-responsive sortable">
+						<thead>
+							<tr><th id="title">Title</th><th id="author">Author</th><th id="organism">Organism</th><th id="year">Year</th></tr>
+						</thead>
+						<tbody id="tableContent" class="searchable"></tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+		<div class="panel panel-default">
+			<div id="headingTwo" class="panel-heading">
+				<h4 class="panel-title">
+					<a class="collapsed" href="#collapseTwo" data-toggle="collapse" data-parent="#accordion">Genes</a>
+				</h4>
+			</div>
+			<div id="collapseTwo" class="panel-collapse collapse">
+				<div class="panel-body">
+					<form action="">
+						<input type="radio" name="organism" value="mice" checked="checked"> Mice <br/>
+						<input type="radio" name="organism" value="human"> Human 
+					</form>
+
+					<br/>
+					<div class="input-group pull-left">
+						<span class="input-group-btn ">
+					        <button id="geneSearch" class="btn btn-default" type="button"><span class="glyphicon glyphicon-search"></span></button>
+					      </span>
+					      <input id="geneText" type="text" class="form-control" placeholder="Search for...">
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="panel panel-default">
+			<div id="headingThree" class="panel-heading">
+				<h4 class="panel-title">
+					<a class="collapsed" href="#collapseThree" data-toggle="collapse" data-parent="#accordion">Conditions</a>
+				</h4>
+			</div>
+			<div id="collapseThree" class="panel-collapse collapse">
+				<div class="panel-body">
+					<div class="input-group pull-left">
+						<span class="input-group-btn ">
+					        <button id="conditionSearch" class="btn btn-default" type="button"><span class="glyphicon glyphicon-search"></span></button>
+					    </span>
+					    <input id="conditionText" type="text" class="form-control" placeholder="Search for...">	
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+<div id="publicationPart">
+	<div id="informationStudy"></div>
+	<button type="button" class="btn btn-primary btn-block" id="RnaSeq" type="button" data-toggle="collapse" data-target="#rnaSeqCollapse" aria-expanded="false" aria-controls="rnaSeqCollapse">RNA Sequencing</button>
+	<div class="collapse" id="rnaSeqCollapse">
+		<div class="well">
+			<div id="conditions"></div>
+			<div id="errorLengthForSubmit" class="alert alert-danger" role="alert">
+				<strong>Oops!</strong> You have to fill in two conditions before continuing!
+			</div>
+			<div id="selectBarMessage" class="alert alert-danger" role="alert">
+				<strong>Oops!</strong> This study cannot be used for the differentially expression analysis since it contains one condition.
+			</div>
+			<div id="NoDEGMessage" class="alert alert-danger" role="alert">
+						<strong>Oops!</strong> No significant differentially expressed genes where found.<br/>Please try again.
+			</div>
+			
+				<div id="analysis_info">
+					<strong>Quantitative Expression (QE)</strong> analysis can be used to determine which genes are expressed in particular cell type and to what degree. <br/>
+					<strong>Differential Expression (DE)</strong> analysis can be used to generate gene lists containing differentially expressed genes with the associated log fold changes and multiple testing corrected p-values between two conditions of interest (A vs. B).
+				</div>
+			
+			<div class="btn-group btn-group-justified">
+				<div class="btn-group">
+					<button type="button" id="QEbutton" class="btn btn-default">Quantitative Expression Analysis</button>
+				</div>
+				<div class="btn-group">
+					<button type="button" id="DEbutton" class="btn btn-default">Differential Expression Analysis</button>
+				</div>
+			</div>
+			<br/>
+			
+			<div id="QE_content">
+					<ul id="QE_tabs" class="nav nav-tabs" role="tablist">
+						<li role="presentation" class="active"><a href="#barGraph" aria-controls="barGraph" role="tab" data-toggle="tab"><span class="glyphicon glyphicon-stats" aria-hidden="true"></span> Bar Graph</a></li>
+						<li role="presentation"><a href="#data" aria-controls="barGraph" role="tab" data-toggle="tab"><span class="glyphicon glyphicon-th" aria-hidden="true"></span> Data</a></li>
+					</ul>
+
+					<div class="tab-content">
+						<div role="tabpanel" class="tab-pane active" id="barGraph">
+							<div class="jumbotron">
+								<div class="container">
+									<div class="col-md-4 col-md-offset-8 input-group pull-right">
+										<span class="input-group-btn">
+									        <button id="searchGeneBarGraph" class="btn btn-default" type="button"><span class="glyphicon glyphicon-search" aria-hidden="true"></span></button>
+									    </span>
+										<input id="geneBarGraph" class="form-control genelist" type="text" placeholder="Search Gene">
+									</div>
+									<br/>
+
+									<div id="TPMdiv" class="col-md-10"></div>
+									<button type="button" id="DownloadBargraph" class="btn btn-primary col-md-2 col-md-offset-10"><span class="glyphicon glyphicon-save-file" aria-hidden="true"></span>Download Image</button>
+								</div>
+							</div>
+						</div>
+						<div role="tabpanel" class="tab-pane" id="data">
+							<div class="jumbotron">
+								<div class="container">
+									<div class="col-md-4 col-md-offset-8 input-group pull-right">
+										<span class="input-group-btn ">
+									        <button id="searchGeneTable" class="btn btn-default" type="button"><span class="glyphicon glyphicon-search" aria-hidden="true"></span></button>
+									    </span>
+										<input id="geneTableQE" class="form-control genelist" type="text" placeholder="Search Gene">
+									</div>
+									<div id="QETable" class="col-md-12 table-scroll"></div>
+									<button type="button" id="DownloadQE" class="btn btn-primary col-md-2 col-md-offset-10"><span class="glyphicon glyphicon-save-file" aria-hidden="true"></span> Download</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			
+			<div id="selectBar" class="DE">
+				<select id="selectConditions" class="DE" multiple="multiple"></select><br/>
+				<button type="button" class="btn btn-default col-md-6 col-md-offset-3 DE" id="submitDEbutton">Perform DE analysis</button>
+			</div>
+			<br/>
+			<br/>
+			
+			<div class="row DE">
+				<div id="scatterplot" class="col-md-7 DE"></div>
+				<div id="DETableContent" class="col-md-5 DE">
+					<div id="searchBar_DE" class="input-group DE">				
+						<input id="DEsearch" class="form-control" type="text" placeholder="Search gene..." />
+					</div>
+					<br/>
+					<br/>
+					<div id="DETable" class="col-md-12 table-scroll"></div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<button type="button" class="btn btn-primary btn-block disabled">Epigenome</button>
+	<button type="button" class="btn btn-primary btn-block disabled">Proteome</button>
+	<button type="button" class="btn btn-primary btn-block disabled">Microscopy</button>
+	<button type="button" id="returnAccordion" class="btn btn-default btn-block returnButton"><span id="leftArrow" class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span></button>
+</div>
+	
+	<div id="contactInfo">
+		<div class="well">
+			<address>
+				<strong>University medical center Groningen<br></strong>
+				Antonius Deusinglaan 1<br/>
+				9713AV Groningen <br/>
+			</address>
+			<address>
+				<b>Contact: </b><br/>
+			  	B.J.L. Eggen<br>
+			  	<a href="mailto:#">b.j.l.eggen@umcg.nl</a>
+			</address>
+			<p>
+				<div id="fb-root"></div>
+				<div class="fb-like" data-href="https://www.facebook.com/GOADtool" data-layout="standard" data-action="like" data-show-faces="true" data-share="true"></div>
+			</p>
+		</div>
+	</div>
+
+	<div id="materialInfo">
+		<div class="well">
+			<h4>Data Processing</h4>
+
+			The compute 5 pipeline from <a href="http://www.molgenis.org/wiki/ComputeStart">MOLGENIS</a> was used to process the data. 
+			This pipeline contained several other features that where used to obtain results for GOAD. 
+			Aligning was done with the use of <a href="http://www.ccb.jhu.edu/software/hisat/index.shtml">HISAT</a>.
+			<a href="http://www.bioinformatics.babraham.ac.uk/index.html">FASTQC</a> was used to perform a quality check upon the obtained datasets.
+			Several preprocessing steps for HTSeq with the use of <a href="http://broadinstitute.github.io/picard/">Picard</a> and <a href="http://samtools.sourceforge.net/">Samtools</a>.
+			In the end <a href="https://pypi.python.org/pypi/HTSeq">HTSeq</a> was used to obtain the counts for the datasets.
+
+			<br/>
+			<h4>Datasets</h4>
+			<ul>
+				<li><a href="http://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-52946/" target="_blank">Butovsky et al. (2013)</a></li>
+				<li><a href="http://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-43366/" target="_blank">Chiu et al. (2013)</a></li>
+				<li><a href="http://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-66211/" target="_blank">Cronk et al. (2013)</a></li>
+				<li><a href="http://www.ebi.ac.uk/arrayexpress/experiments/E-GEOD-52564/" target="_blank">Zhang et al. (2014)</a></li>
+			</ul>
+
+		</div>
+	</div>
+
+	<div id="genePart">
+		<div class="well">
+			<div id="geneInformation"></div> 
+			<div id='dashboard'></div>
+			<button type="button" id="returnTPM" class="btn btn-default btn-block returnButton"><span id="leftArrow" class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span></button>
+		</div>
+	</div>
+
+	<div class="panel panel-default">
+		<div class="panel-footer">Copyright &copy; 2014</div>
+	</div>
+</div>
