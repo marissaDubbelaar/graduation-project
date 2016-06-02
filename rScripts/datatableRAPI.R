@@ -65,8 +65,8 @@ splitOrganism <- function(s) strsplit(s, "G")[[1]][1]
 # A connection is made with molgenis to obtain the needed information.
 source("http://localhost:8080/molgenis.R")
 molgenis.login("admin", "admin")
-#conditie1 = "ERR103429"
-#conditie2 = "ERR103438"
+#conditie1 = "SRR1033789"
+#conditie2 = "SRR1033797"
 conditie1 = "${condition1}"
 conditie2 = "${condition2}"  
 ##############################################################
@@ -74,7 +74,7 @@ conditie2 = "${condition2}"
 ##############################################################
 # Reads the count file
 M1 <- molgenis.get(entity = "${entityName}")
-#M1 <- molgenis.get(entity = "EMTAB1030")
+#M1 <- molgenis.get(entity = "EGEOD52564")
 #M1 <- read.csv("Desktop/Kallisto/EGEOD_52946/mergedCounts.txt", sep="\t")
 
 # The column probe is used to define the rownames.
@@ -82,11 +82,11 @@ M1 <- setRowname(M1)
 
 # Reads the targets file.
 targets <- molgenis.get(entity = "${targetFile}")
-#targets <- molgenis.get(entity = "EMTAB1030_targets")
+#targets <- molgenis.get(entity = "EGEOD52564_targets")
 #targets <- read.csv("Desktop/goadFiles/Kallisto/EGEOD_52946/EGEOD52946_targets.txt", sep="\t")
 
 # The groups are made and can be used to calculate the dge list.
-#targets$Description <- gsub('.{1}$', '', targets$Description)
+#targets$Description <- gsub('.{3}$', '', targets$Description)
 # The DGE list is made.
 dge <- DGEList(counts=M1, group = factor(targets$Description))
 ####################################################################
@@ -170,6 +170,7 @@ if (length(toptable) != 0) {
   
   toptable$Associated_Gene_Name[is.na(toptable$Associated_Gene_Name)] <- as.character(rownames(toptable)[is.na(toptable$Associated_Gene_Name)])
   toptable <- toptable[!duplicated(toptable[,6]),]
+  toptable[,5] <- round(toptable[,5], 9)
   toptable <- toptable[!grepl("^20", rownames(toptable)),]
   rownames(toptable) <- toptable[,6]
   View(as.matrix(toptable[c(1,5)]))
