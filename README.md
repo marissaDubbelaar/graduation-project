@@ -13,7 +13,7 @@ This folder contains the following content:<br />
     This script can be used to create an sampleSheet that can be used within the Kallisto pipeline of MOLGENIS compute.<br />
   - mergeCounts           (Bash Script)<br />
     Counts of samples are saved within one file per sample, this script enables the merge of these files into one count file.<br />
-    <br />
+
 #htmlContent
 The folder consists of html, css and javascript files that are used to create the GOAD web application.<br />
   - QE_Bargraph           (CSS)<br />
