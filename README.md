@@ -1,7 +1,7 @@
 # graduation-project
 Scripts provided in this repository were used during the development of GOAD
 
-Preprocessing steps
+#Preprocessing steps
 Files found within this folder were used to preprocessing the data.
 This folder contains the following content:
   - createOverview        (Folder)
@@ -14,7 +14,7 @@ This folder contains the following content:
   - mergeCounts           (Bash Script)
     Counts of samples are saved within one file per sample, this script enables the merge of these files into one count file.
     
-htmlContent
+#htmlContent
 The folder consists of html, css and javascript files that are used to create the GOAD web application.
   - QE_Bargraph           (CSS)
     Contains the css for the bargraph shown with QE data.
@@ -45,7 +45,7 @@ The folder consists of html, css and javascript files that are used to create th
   - goadmanager           (JavaScript)
     Contains the rest of the code for the GOAD web application
 
-rScripts
+#rScripts
 This folder consists of R scripts that were used with the GOAD web application
   - CalculateTPMbyGTF     (R Script)
     Makes sure that the TPM values are calculated with the use of the GTF files (and the raw counts within the MOLGENIS database).
