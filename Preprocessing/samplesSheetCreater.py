@@ -76,4 +76,4 @@ class CreateSampleSheet():
 				+EGEODNumber+"/run01/results/sortedBam/"+SRANumber+"_"+str(self.count)+".bam\n")
 			self.count += 1
 
-css = CreateSampleSheet("/Volumes/Elements/School/Afstuderen/GOAD3/Data/1030/", "/Users/marissa/Desktop/samplesSheet1030.csv")
+css = CreateSampleSheet("/Volumes/Elements/School/Afstuderen/GOAD3/Data/53737/", "/Users/marissa/Desktop/samplesSheet53737.csv")

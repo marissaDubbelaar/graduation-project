@@ -52,8 +52,6 @@ M1 <- setRowname(M1)
 
 # The targets file is obtained from MOLGENIS.
 targets <- molgenis.get(entity = paste(studyID, "targets", sep = "_"))
-# The replicate number and the '_' are removed from the sample name.
-targets$Description <- gsub('(_)+([0-9]+)?$', '', targets$Description)
 # The DGE list is made.
 dge <- DGEList(counts=M1, group = factor(targets$Description))
 ####################################################################
@@ -228,7 +226,9 @@ tpmMatrix <- as.data.frame(tpmMatrix, stringsAsFactors = F)
 #################################################################
 #                      Obtaining Percentiles                    #
 #################################################################
+# Makes sure that all of the numbers (written as characters) are written as numeric.
 tpmMatrix[,2:length(colnames(tpmMatrix))] <- lapply(tpmMatrix[,2:length(colnames(tpmMatrix))], as.numeric)
+# Genes with an expression higher than 0 are considered as expressed.
 Expressed <- tpmMatrix[,1] > 0 
 
 count = 2

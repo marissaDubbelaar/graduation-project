@@ -1,14 +1,17 @@
 ##############################################################
 # Author    : M. Dubbelaar
 # Date      : 08-april-2016
-# File Name : databaseRAPI.R
+# File Name : scatterplotDE.r
 # Purpose   : Performs the normalization, the pairwise
-#             DE analysis and the creation of the matrix
+#             DE analysis and the creation of the scatterplot
 ##############################################################
 #source("https://bioconductor.org/biocLite.R")
 #biocLite("edgeR")
-#biocLite("biomaRt)
+#install.packages("scatterD3")
+#install.packages("htmlwidgets")
 library("edgeR")
+library("scatterD3")
+library("htmlwidgets")
 library("RCurl")
 ##############################################################
 #                          Functions                         #
@@ -42,8 +45,6 @@ createDGEGroups <- function(conditions, dataTab) {
   # It makes sure that these conditions can be used to specify the 
   # group to create the model.matrix for the DE analysis.
   # A is returned containing each condition found in the dge dataset.
-  #dataTab <- sapply(colnames(M1.counts[2:length(M1.counts)]), separate)
-  #conditions <- ncol(t(sapply(colnames(M1.counts[2:length(M1.counts)]), separate)))
   count <- 1
   dataName <- matrix(NA, nrow = ncol(t(dataTab)), ncol = 1)
   for (x in 1:conditions) {
@@ -51,6 +52,35 @@ createDGEGroups <- function(conditions, dataTab) {
     count <- count + 1
   }
   return(dataName)
+}
+
+returnUniqueGene <- function(value) {
+  # This function is used to find the unique genes with the FDR value
+  # that is given when calling the function.
+  uniqueGenes <- which(toptable[[1]]$FDR < value)
+  toptable <- toptable[uniqueGenes,]
+  return (toptable)
+}
+
+obtainOptimalFDR <- function(value) {
+  # This function obtains the unique values from the function 
+  # returnUniqueGene and checks the amount of genes found.
+  # This is necessary to make sure that the interactive scatterplot stays fast.
+  # How higher the amount of rows, the faster the FDR value becomes less.
+  # If the obtain number of genes is greater than 2500, this function is called again.
+  # In the obtained fdr value is returned in the end together with the unique genes.
+  obtainedRes <- returnUniqueGene(value)
+  if (length(rownames(obtainedRes)) > 2000 && length(rownames(obtainedRes)) < 5000) {
+    obtainOptimalFDR(value/10)
+  } else if (length(rownames(obtainedRes)) >= 5000 && length(rownames(obtainedRes)) < 10000) {
+    obtainOptimalFDR(value/20)
+  } else if (length(rownames(obtainedRes)) >= 10000 && length(rownames(obtainedRes)) < 20000) {
+    obtainOptimalFDR(value/50)
+  } else if (length(rownames(obtainedRes)) >= 20000) {
+    obtainOptimalFDR(value/100)
+  } else {
+    return (list(obtainedRes, value))
+  }
 }
 
 # The function separate is used to split the vector on "_"
@@ -65,8 +95,6 @@ splitOrganism <- function(s) strsplit(s, "G")[[1]][1]
 # A connection is made with molgenis to obtain the needed information.
 source("http://localhost:8080/molgenis.R")
 molgenis.login("admin", "admin")
-#conditie1 = "SRR1033789"
-#conditie2 = "SRR1033797"
 conditie1 = "${condition1}"
 conditie2 = "${condition2}"  
 ##############################################################
@@ -74,19 +102,13 @@ conditie2 = "${condition2}"
 ##############################################################
 # Reads the count file
 M1 <- molgenis.get(entity = "${entityName}")
-#M1 <- molgenis.get(entity = "EGEOD52564")
-#M1 <- read.csv("Desktop/Kallisto/EGEOD_52946/mergedCounts.txt", sep="\t")
 
 # The column probe is used to define the rownames.
 M1 <- setRowname(M1)
 
 # Reads the targets file.
 targets <- molgenis.get(entity = "${targetFile}")
-#targets <- molgenis.get(entity = "EGEOD52564_targets")
-#targets <- read.csv("Desktop/goadFiles/Kallisto/EGEOD_52946/EGEOD52946_targets.txt", sep="\t")
 
-# The groups are made and can be used to calculate the dge list.
-#targets$Description <- gsub('.{3}$', '', targets$Description)
 # The DGE list is made.
 dge <- DGEList(counts=M1, group = factor(targets$Description))
 ####################################################################
@@ -105,7 +127,6 @@ dge <- calcNormFactors(dge)
 
 # The design and all of the needed calculations are made.
 design <- model.matrix(~0+factor(targets$Description), data = dge$samples )
-# lmfit fits the linear model.
 dge <- estimateGLMCommonDisp(dge, design)
 dge <- estimateGLMTrendedDisp(dge, design)
 dge <- estimateGLMTagwiseDisp(dge, design)
@@ -138,13 +159,16 @@ madeContrast[indexCon2] = -1
 #                Obtain the significant DEG                  #
 ##############################################################
 # The DEG are calculated and are filtered on a significant FDR
-# value of 0.05 (Benjamini Corrected values).
+# value of 0.05 (Benjamini Corrected values) or less.
 lrt <- glmLRT(fit, contrast = madeContrast)
 toptable <- topTags(lrt, n=dim(dge[[1]])[1], adjust.method="BH", sort.by="none")
-uniqueGenes <- which(toptable[[1]]$FDR < 0.05)
-toptable <- toptable[uniqueGenes,]
 
-if (length(toptable) != 0) {
+# Calculated the optimal FDR where n < 2000
+toptable <- obtainOptimalFDR(0.05)
+fdrVal <- toptable[[2]]
+toptable <- toptable[[1]]
+
+if (length(rownames(toptable)) != 0 && length(rownames(toptable)) != 1) {
   ##############################################################
   #                    Obtain genesymbols                      #
   ##############################################################
@@ -154,10 +178,8 @@ if (length(toptable) != 0) {
   # Checks if the genes are from mice, if yes obtain the mice
   # ensemble data, otherwise the human ensemble data.
   if ("${organism}" == "Mus musculus") {
-  #if ("Homo sapiens" == "Mus musculus") {
     geneList <- molgenis.get(entity = "miceGenes")
   } else if ("${organism}" == "Homo sapiens") {
-  #} else if ("Homo sapiens" == "Homo sapiens") {
     geneList <- molgenis.get(entity = "humanGenes")
   }
   
@@ -170,11 +192,27 @@ if (length(toptable) != 0) {
   
   toptable$Associated_Gene_Name[is.na(toptable$Associated_Gene_Name)] <- as.character(rownames(toptable)[is.na(toptable$Associated_Gene_Name)])
   toptable <- toptable[!duplicated(toptable[,6]),]
-  toptable[,5] <- round(toptable[,5], 9)
   toptable <- toptable[!grepl("^20", rownames(toptable)),]
   rownames(toptable) <- toptable[,6]
-  View(as.matrix(toptable[c(1,5)]))
-  #print(as.matrix(toptable[c(1,5)]))
+  ##############################################################
+  #                 Create Vulcano scatterplot                 #
+  ##############################################################
+  # Creates a difference in colors according to the significance of a gene
+  colorsSign <- rep(paste("<", as.character(fdrVal)),length(rownames(toptable)))
+  colorsSign[toptable[,5] < fdrVal/5] = col=paste("<", as.character(fdrVal/5))
+  colorsSign[toptable[,5] < fdrVal/10] = col=paste("<", as.character(fdrVal/10))
+  toptable[7] <- as.data.frame(colorsSign, stringsAsFactors = F)
+  
+  # tooltips contains the unique gene information which will be come available
+  # when the user hovers over the gene symbol.
+  tooltips <- paste(toptable[,6], "<br/>FDR: <strong>", as.data.frame(toptable[,5])[[1]],
+                    "</strong><br />LogFC : <strong>", as.data.frame(toptable[,1])[[1]],"</strong>")
+  
+  # Creation of the interactive scatterplot.scatterD3(as.data.frame(toptable[,1])[[1]], -log(as.data.frame(toptable[,5])[[1]], 10), xlab="LogFC", ylab="-log10 (FDR p-value)", tooltip_text = tooltips, col_var = toptable$colorsSign)
+  scatterplot <- scatterD3(as.data.frame(toptable[,1])[[1]], -log(as.data.frame(toptable[,5])[[1]], 10), xlab="LogFC", ylab="-log10 (FDR p-value)", tooltip_text = tooltips, col_var = toptable$colorsSign)
+  # saveWidget is used to save the data so that it could be implemented on Molgenis.
+  saveWidget(scatterplot, "${outputFile}", selfcontained = F)
 } else {
-  print(paste("No differentially expressed genes where found with comparison:", sub("^\\s+|\\s+$|  ", "", gsub("_", " ", targets$Description[which(targets$SRA==conditie1)])), "vs.", sub("\\s+$", "", gsub("_", " ", targets$Description[which(targets$SRA==conditie1)]))))
+  print(paste("<div id='scatterplotError'>No differentially expressed genes where found with comparison:", sub("^\\s+|\\s+$|  ", "", gsub("_", " ", targets$Description[which(targets$SRA==conditie1)])), "vs.", sub("\\s+$", "", gsub("_", " ", targets$Description[which(targets$SRA==conditie1)])), "</div>"))
 }
+

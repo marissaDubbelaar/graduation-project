@@ -1,11 +1,16 @@
+/*
+ * Code written in this javascript document is a modification from the following code: https://bl.ocks.org/mbostock/3887051
+ * @Author Mldubbelaar
+ */
+
 function createBarGraph(){
-	// The size of the bargraph is defined.
-	var margin = {top: 20, right: 20, bottom: 30, left: 40},
+	// The size of the bar graph is defined.
+	var margin = {top: 70, right: 20, bottom: 30, left: 40},
 		width = ($("#QE_content").width() * 0.85) - margin.left - margin.right,
 	    height = 500 - margin.top - margin.bottom;
 
 	var x0 = d3.scale.ordinal()
-	    .rangeRoundBands([0, width], .1);
+	    .rangeRoundBands([0, width*0.83], .1);
 
 	var x1 = d3.scale.ordinal();
 
@@ -14,7 +19,35 @@ function createBarGraph(){
 
 	// Colors for the columns is defined.
 	var color = d3.scale.ordinal()
-	    .range(["#0080ff", "#999999", "#ffcc00"]);
+		.domain(["0-5 percentile: very high expression", 
+				"5-10 percentile: high expression",
+				"10-20 percentile: moderately high expression",
+				"20-30 percentile: moderately high expression",
+				"30-40 percentile: moderate expression",
+				"40-50 percentile: moderate expression",
+				"50-60 percentile: moderate expression",
+				"60-70 percentile: low expression",
+				"70-80 percentile: low expression",
+				"80-90 percentile: low expression",
+				"90-100 percentile: very low expression",
+				"Not significantly expressed",
+				"Not expressed"
+	  			])
+	    .range([
+	    		"#ff0000", 		//Red	
+				"#ff6600",		//Orange
+				"#ffff00", 		//Yellow
+				"#ccff33", 		//Greenyellow 	
+				"#66ff33", 		//Green
+				"#66ffff", 		//Turqoise
+				"#33ccff", 		//Darkturqoise
+				"#0000ff", 		//Blue
+				"#000099", 		//Darkblue
+				"#3333cc", 		//Midnightblue	    		
+				"#000000", 		//Black	 
+				"#666666", 		//Dark Grey	   
+				"#cccccc"		//Grey	      		
+				]); 	
 
 	// X axis is defined.
 	var xAxis = d3.svg.axis()
@@ -32,8 +65,13 @@ function createBarGraph(){
 	  .attr('class', 'd3-tip')
 	  .offset([-10, 0])
 	  .html(function(d) {
-	    return "<strong>" + d.name + " value : </strong>" + d.value
-	  })
+	  	if (d.Percentile[":"] === undefined) {
+	  		var percentileInfo = d.Percentile.split(": ");
+	  		return "TPM value : " + d.TPM + "<br/>TPM Low value : " + d.Low_TPM +"<br/>TPM High value : " + d.High_TPM + "<br/><br/>" + capitalizeEachWord(d.Percentile)
+	  	} else {
+	  		return "TPM value : " + d.TPM + "<br/>TPM Low value : " + d.Low_TPM +"<br/>TPM High value : " + d.High_TPM + "<br/><br/>" + capitalizeEachWord(percentileInfo[1])
+	  	}
+	})
 
 	// The svg is drawn and added into the div with the id "TPMdiv"
 	var svg = d3.select("#TPMdiv").append("svg")
@@ -43,9 +81,26 @@ function createBarGraph(){
 	  	.append("g")
 	    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-	// The type of information shown (also in the legend) are defined.
-	svg.call(tip);
-	  var tpmTypes = ["High TPM", "Low TPM", "TPM"];
+	  // The type of information shown (also in the legend) are defined.
+	  svg.call(tip);
+	  
+	  // Defining the tpmTypes (these types will be drawn).
+	  var tpmTypes = ["TPM"];
+	  // var tpmTypes = ["Percentile"];
+	  var percentileTypes = [
+							"0-5 percentile: very high expression", 
+	  						"5-10 percentile: high expression",
+	  						"10-20 percentile: moderately high expression",
+	  						"20-30 percentile: moderately high expression",
+	  						"30-40 percentile: moderate expression",
+	  						"40-50 percentile: moderate expression",
+	  						"50-60 percentile: moderate expression",
+	  						"60-70 percentile: low expression",
+	  						"70-80 percentile: low expression",
+	  						"80-90 percentile: low expression",
+	  						"90-100 percentile: very low expression",
+	  						"Not significantly expressed",
+	  						"Not expressed"];
 
 	  // The tpmVals are obtained.
 	  bargraphData.forEach(function(d) {
@@ -66,7 +121,7 @@ function createBarGraph(){
 	  svg.append("g")
 	      .attr("class", "y axis")
 	      .call(yAxis)
-	    .append("text")
+	      .append("text")
 	      .attr("transform", "rotate(-90)")
 	      .attr("y", 6)
 	      .attr("dy", ".71em")
@@ -78,44 +133,50 @@ function createBarGraph(){
 	      .data(bargraphData)
 	      .enter().append("g")
 	      .attr("class", "state")
-	      .attr("transform", function(d) { return "translate(" + x0(d.Gene) + ",0)"; });
+	      .attr("transform", function(d) { return "translate(" + x0(d.Gene) + ",0)"; })
+	      .attr("fill", function(d) { return color(d.Percentile); })
+	      .on('mouseover', tip.show)
+	      .on('mouseout', tip.hide);
 
 	  // Adds each bar to the bargraph.
 	  state.selectAll("rect")
 	      .data(function(d) { return d.tpmVal; })
 	      .enter().append("rect")
-	      .attr("width", x1.rangeBand())
-	      .attr("x", function(d) { return x1(d.name); })
+	      // .attr("width", x1.rangeBand())
+	      .attr("width", d3.min([x1.rangeBand(), 100]))
+	      // .attr("x", function(d) { return x1(d.name); })
+	      .attr("x", function(d) { return x1(d.name) + (x1.rangeBand() - d3.min([x1.rangeBand(), 100]))/2; })
 	      .attr("y", function(d) { return y(d.value); })
 	      .attr("height", function(d) { return height - y(d.value); })
-	      .attr("fill", function(d) { return color(d.name); })
-	      .on('mouseover', tip.show)
-	      .on('mouseout', tip.hide);
+	      // .attr("fill", function(d) { return color(d.Percentile); });
 
 	  // Adds the legend to the svg.
 	  var legend = svg.selectAll(".legend")
-	      .data(tpmTypes.slice().reverse())
+	      // .data(tpmTypes.slice().reverse())
+	      .data(percentileTypes.slice().reverse())
 	      .enter().append("g")
 	      .attr("class", "legend")
 	      .attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; });
 
-	  // Adds the color to the bars.
+	  // Adds the color to the legend.
 	  legend.append("rect")
-	      .attr("x", width - 18)
+	      .attr("x", width)
 	      .attr("width", 18)
 	      .attr("height", 18)
 	      .style("fill", color);
 
-	  // Adds the names on the x axis of the svg.
+	  // Adds the names of the legend.
 	  legend.append("text")
-	      .attr("x", width - 24)
+	      .attr("x", width - 4)
 	      .attr("y", 9)
 	      .attr("dy", ".35em")
 	      .style("text-anchor", "end")
-	      .text(function(d) { return d; });
-}
-
-function type(d) {
-  d.tpmVal = +d.tpmVal;
-  return d;
+	      .text(function(d) {
+	      	if (d[":"] === undefined) {
+	  			var percentileNumber = d.split(": ");
+	  			return capitalizeEachWord(percentileNumber[0]);
+		  	} else {
+		  		return capitalizeEachWord(d);
+		  	}
+		  });
 }
