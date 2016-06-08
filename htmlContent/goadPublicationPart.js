@@ -3,7 +3,6 @@
  * @Author Mldubbelaar
  */
 
-
 $(document).ready(function () {
 	
 	//-------------------------------------------------//
@@ -108,6 +107,7 @@ $(document).ready(function () {
 						var data = data["items"];
 						$(".row.DE").append("<div id='firstCondition' class='col-md-11 col-md-offset-1 DE'><b>"+ capitalizeEachWord(data[0]["Description"].replace(/-|_/g,' ')) + "</b></div>")
 			});
+	
 			$.get("/scripts/DE_ScatterPlot/run?entityName="+GEODOnPage[0].replace(/-/g,'')+"&condition1="+$("#selectConditions").val()[0]+"&condition2="+$("#selectConditions").val()[1]+"&targetFile="+GEODOnPage[0].replace(/-/g,'')+"_targets&organism="+organismOnPage[0].replace(/ /g, "+")).done(
 				function(data){
 					// The necessary information from the scatterD3 plot is obtained
